@@ -1,6 +1,7 @@
 var connect = require('connect')
   , static_pages = require('serve-static')
   , fs = require('fs')
+  , md5 = require('md5')
   , app = connect()
 ;
 
@@ -48,6 +49,21 @@ app.use('/user.html', function(request,response,next) {
 app.use('/401/basic', function(request,response,next) {
   send_401_basic(response);
 });
+app.use('/digest.html', function(request,response,next) {
+  var auth = request.headers.authorization;
+  if ( auth ) {
+    let info = auth_info(auth)
+      , A1 = md5(info.username+':'+info.realm+':'+'cool!')
+      , A2 = md5(request.method+':'+info.uri)
+      , expected = md5(A1+':'+info.nonce+':'+A2)
+    ;
+    if ( info.response == expected ) next();
+  }
+  else send_401_digest(response);
+});
+app.use('/401/digest', function(request,response,next) {
+  send_401_digest(response);
+});
 
 /*
 ** base64 encode
@@ -89,6 +105,13 @@ function send_401_basic(response) {
   });
   response.end('Désolé, ce document est protégé par mot de passe...');
 }
+function send_401_digest(response) {
+  response.writeHead(401, {
+    'WWW-Authenticate': 'Digest realm="BE-HTTP", nonce="abc"',
+    'Content-Type': 'text/plain; charset=utf-8'
+  });
+  response.end('Désolé, ce document est protégé par mot de passe...');
+}
 function send_404(response) {
   response.writeHead(404, {
     'Content-Type': 'text/plain; charset=utf-8'
@@ -111,6 +134,18 @@ function send_fake(response,file,type) {
     response.write(data);
   });
   stream.on('end', function(data) { response.end(); });
+}
+
+// get info from auth string
+function auth_info(auth) {
+  return auth.split(/,? /).reduce( function(o,s) {
+    let [k,v] = s.split('=');
+    if ( v ) {
+      v = v.trim();
+      o[k] = v.substr(1,v.length-2);
+    }
+    return o;
+  },{});
 }
 
 
