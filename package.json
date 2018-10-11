@@ -1,0 +1,19 @@
+{
+  "name": "mod95-be3",
+  "version": "0.0.1",
+  "description": "Serveur pour le BE3 du Mod 9.5 \"Réseaux informtiques\"",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "DMR",
+  "license": "MIT",
+  "dependencies": {
+    "connect": "^3.6.6",
+    "serve-static": "^1.13.2"
+  },
+  "engines": {
+    "node": "10.10.0"
+  }
+}
