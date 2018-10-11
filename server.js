@@ -41,12 +41,12 @@ app.use('/user.html', function(request,response,next) {
       , decoded = new Buffer(encoded,'base64').toString('ascii')
     ;
     if ( decoded == 'be-http:cool!' ) next();
-    else send_401(response);
+    else send_401_basic(response);
   }
-  else send_401(response);
+  else send_401_basic(response);
 });
-app.use('/reset-basic', function(request,response,next) {
-  send_401(response);
+app.use('/401/basic', function(request,response,next) {
+  send_401_basic(response);
 });
 
 /*
@@ -82,7 +82,7 @@ app.use(function(request,response) {
 **
 ** ***************************************************************************/
 
-function send_401(response) {
+function send_401_basic(response) {
   response.writeHead(401, {
     'WWW-Authenticate': 'Basic realm="BE-HTTP"',
     'Content-Type': 'text/plain; charset=utf-8'
