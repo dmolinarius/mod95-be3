@@ -49,6 +49,7 @@ app.use('/user.html', function(request,response,next) {
 app.use('/401/basic', function(request,response,next) {
   send_401_basic(response);
 });
+
 app.use('/digest.html', function(request,response,next) {
   var auth = request.headers.authorization;
   if ( auth ) {
@@ -77,6 +78,13 @@ app.use('/encode', function(request,response,next) {
     'Content-Type': 'text/plain; charset=utf-8'
     });
   response.end(encoded);
+});
+app.use('/md5', function(request, response, next) {
+  var url = request.url.substring(1);
+  response.writeHead(200, {
+    'Content-Type': 'text/plain; charset=utf-8'
+    });
+  response.end(md5(url));
 });
 
 /*
