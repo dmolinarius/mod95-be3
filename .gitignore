@@ -1,0 +1,15 @@
+# dependencies
+/node_modules
+npm-debug.log
+
+# IDEs and editors
+*.swp
+
+# misc
+npm-debug.log
+
+# System Files
+Thumbs.db
+
+# environment
+/*.env
