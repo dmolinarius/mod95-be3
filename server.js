@@ -1,8 +1,8 @@
-var connect = require('connect')
+var express = require('express')
   , static_pages = require('serve-static')
   , fs = require('fs')
   , md5 = require('md5')
-  , app = connect()
+  , app = express()
 ;
 
 /* ****************************************************************************
@@ -102,7 +102,19 @@ app.use(function(request,response) {
 
 /* ****************************************************************************
 **
-** Misc functions
+** Manage lists
+**
+** ***************************************************************************/
+var lists = [];
+
+// GET list/$listid
+// PUT /list/$listid update
+// POST /list create
+// DELETE /list/$listid
+
+/* ****************************************************************************
+**
+** Send various responses
 **
 ** ***************************************************************************/
 
@@ -143,6 +155,13 @@ function send_fake(response,file,type) {
   });
   stream.on('end', function(data) { response.end(); });
 }
+
+
+/* ****************************************************************************
+**
+** Other functions
+**
+** ***************************************************************************/
 
 // get info from auth string
 function auth_info(auth) {
