@@ -12,6 +12,7 @@
   "dependencies": {
     "express": "^4.16.4",
     "md5": "^2.2.1",
+    "mustache-express": "^1.2.8",
     "serve-static": "^1.13.2"
   },
   "engines": {

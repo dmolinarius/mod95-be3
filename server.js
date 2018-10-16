@@ -1,11 +1,24 @@
 var express = require('express')
   , static_pages = require('serve-static')
   , body_parser = require('body-parser')
-  , urlencoded_parser = body_parser.urlencoded({extended: false})
+  , mustache = require('mustache-express')
   , fs = require('fs')
   , md5 = require('md5')
+;
+var urlencoded_parser = body_parser.urlencoded({extended: false})
   , app = express()
 ;
+
+/* ****************************************************************************
+**
+** Configure template engine
+**
+** ***************************************************************************/
+let VIEWS_PATH =  __dirname + '/views';
+app.engine('html', mustache(VIEWS_PATH,'.html'));
+app.set('view engine', 'mustache');
+app.set('views', VIEWS_PATH);
+
 
 /* ****************************************************************************
 **
@@ -148,32 +161,36 @@ app.use(function(request,response) {
 ** ***************************************************************************/
 
 function send_401_basic(request,response) {
-  response.writeHead(401, {
+  response.status(401).set({
     'WWW-Authenticate': 'Basic realm="BE-HTTP"',
-    'Content-Type': 'text/plain; charset=utf-8'
+  }).render( 'error.html', {
+    bgcolor: "#066",
+    code: "401 : Authorization Required",
+    msg:"Ce document est protégé par mot de passe"
   });
-  response.end('Désolé, ce document est protégé par mot de passe...');
 }
 function send_401_digest(request,response) {
-  response.writeHead(401, {
-    'WWW-Authenticate': 'Digest realm="BE-HTTP", nonce="abc"',
-    'Content-Type': 'text/plain; charset=utf-8'
+  response.status(401).set({
+    'WWW-Authenticate': 'Digest realm="BE-HTTP", nonce="abc"'
+  }).render( 'error.html', {
+    bgcolor: "#060",
+    code: "401 : Authorization Required",
+    msg:"Ce document est protégé par mot de passe"
   });
-  response.end('Désolé, ce document est protégé par mot de passe...');
 }
 function send_404(request,response) {
-  console.log('Hello from 404 middleware');
-  response.writeHead(404, {
-    'Content-Type': 'text/plain; charset=utf-8'
-    });
-  response.end('Désolé, le document demandé est introuvable...');
+  response.status(404).render( 'error.html', {
+    bgcolor: "#006",
+    code: "404 : Not Found",
+    msg:"Désolé le document demandé est introuvable"
+  });
 }
 function send_405(request,response) {
-  console.log('Hello from 405 middleware');
-  response.writeHead(405, {
-    'Content-Type': 'text/plain; charset=utf-8'
-    });
-  response.end('Méthode non autorisée...');
+  response.status(404).render( 'error.html', {
+    bgcolor: "#600",
+    code: "405 : Method Not Allowed",
+    msg:"La méthode "+request.method+" n'est pas autorisée pour cette ressource"
+  });
 }
 
 function send_fake(request, response) {
