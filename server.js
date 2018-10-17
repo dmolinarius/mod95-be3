@@ -53,6 +53,7 @@ app.get('/redirect', function(request,response,next) {
 /*
 ** HTTP Basic protected resource
 */
+let send_401_basic = send_401('Basic','BE-HTTP');
 app.get('/user.html', function(request,response,next) {
   var auth = request.headers.authorization;
   if ( auth && auth.indexOf('Basic') === 0 ) {
@@ -81,6 +82,7 @@ app.get('/encode/*', function(request,response,next) {
 /*
 ** HTTP Digest protected resource
 */
+let send_401_digest = send_401('Digest','BE-HTTP','abc');
 app.get('/digest.html', function(request,response,next) {
   var auth = request.headers.authorization;
   if ( auth ) {
@@ -111,17 +113,9 @@ app.get('/md5', function(request, response, next) {
 ** List service
 **
 ** ***************************************************************************/
-var lists = {};
+let lists = {}
+;
 
-/*
-** POST /list  - create a list
-**   params : name
-**   returns : empty list
-*/
-
-// GET list/$listid
-// PUT /list/$listid update
-// DELETE /list/$listid
 
 
 /*
@@ -160,23 +154,23 @@ app.use(function(request,response) {
 **
 ** ***************************************************************************/
 
-function send_401_basic(request,response) {
-  response.status(401).set({
-    'WWW-Authenticate': 'Basic realm="BE-HTTP"',
-  }).render( 'error.html', {
-    bgcolor: "#066",
-    code: "401 : Authorization Required",
-    msg:"Ce document est protégé par mot de passe"
-  });
-}
-function send_401_digest(request,response) {
-  response.status(401).set({
-    'WWW-Authenticate': 'Digest realm="BE-HTTP", nonce="abc"'
-  }).render( 'error.html', {
-    bgcolor: "#060",
-    code: "401 : Authorization Required",
-    msg:"Ce document est protégé par mot de passe"
-  });
+function send_401(auth_method, realm, nonce='') {
+  var supported = ['Basic','Digest']
+    , method = (supported.indexOf(auth_method) > -1) ? auth_method : 'Basic'
+    , info = {
+        Basic: { color:'#066', auth: method+' realm="'+realm+'"' },
+        Digest: { color:'#060', auth: method+' realm="'+realm+'", nonce="'+nonce+'"' }
+      }
+  ;
+  return function(request,response) {
+    response.status(401).set({
+      'WWW-Authenticate': info[method].auth,
+    }).render( 'error.html', {
+      bgcolor: info[method].color,
+      code: "401 : Authorization Required",
+      msg:"Ce document est protégé par mot de passe"
+    });
+  };
 }
 function send_404(request,response) {
   response.status(404).render( 'error.html', {
