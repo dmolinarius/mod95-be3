@@ -46,8 +46,20 @@ app.get('/file3.html', function(request,response,next) {
 /*
 ** redirecting resources
 */
-app.get('/redirect', function(request,response,next) {
+app.get('/moved', function(request,response,next) {
   response.writeHead(301, { 'Location': 'http://www.ec-lyon.fr' });
+  response.end();
+});
+app.get('/found', function(request,response,next) {
+  response.writeHead(302, { 'Location': 'http://www.ec-lyon.fr' });
+  response.end();
+});
+app.get('/temp', function(request,response,next) {
+  response.writeHead(307, { 'Location': 'http://www.ec-lyon.fr' });
+  response.end();
+});
+app.get('/perm', function(request,response,next) {
+  response.writeHead(308, { 'Location': 'http://www.ec-lyon.fr' });
   response.end();
 });
 
@@ -180,6 +192,7 @@ app.patch('/todolist/:id', check_content_types([
   check_params('body',['index','delete','value']),
   check_list,
   function(request,response,next) {
+    // TODO check index and delete to be integers in a reasonable range
     lists[request.params.id].data.splice(
       request.body.index, request.body.delete, ...list_data(request.body.value));
     response.data = lists[request.params.id];
