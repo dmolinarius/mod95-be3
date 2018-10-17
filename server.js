@@ -6,6 +6,7 @@ var express = require('express')
   , md5 = require('md5')
 ;
 var urlencoded_parser = body_parser.urlencoded({extended: false})
+  , json_parser = body_parser.json({strict: false})
   , app = express()
 ;
 
@@ -114,8 +115,99 @@ app.get('/md5', function(request, response, next) {
 **
 ** ***************************************************************************/
 let lists = {}
+  , list_name = () => 'list-'+(new Date()).getTime()
+  , list_data = (value) => Array.isArray(value) ? value : [value]
+  , new_list = (value) => {
+      let name = list_name();
+      if ( lists[name] ) return new_list();
+      lists[name] = { name, data:  list_data(value) };
+      return lists[name];
+    }
 ;
 
+/*
+** POST /todolist  - create a todolist
+**   param : value = String | [String]
+**   returns : new todolist
+*/
+app.post('/todolist', check_content_types([
+    'application/x-www-form-urlencoded',
+    'application/json'
+  ]),
+  json_parser,
+  urlencoded_parser,
+  check_params('body',['value']),
+  function(request,response,next) {
+    response.data = new_list(request.body.value);
+    send_json(request,response);
+  }
+);
+
+/*
+** PUT /todolist/:id - change given todolist
+**   param : value = String | [String]
+**   returns : modified todolist
+*/
+app.put('/todolist/:id', check_content_types([
+    'application/x-www-form-urlencoded',
+    'application/json'
+  ]),
+  json_parser,
+  urlencoded_parser,
+  check_params('body',['value']),
+  check_list,
+  function(request,response,next) {
+    lists[request.params.id].data = list_data(request.body.value);
+    response.data = lists[request.params.id];
+    send_json(request,response);
+  }
+);
+
+/*
+** PATCH /todolist/:id - patch given todolist
+**   does a splice
+**   param : index = integer
+**   param : delete = integer
+**   param : value = String | [String]
+**   returns : patched todolist
+*/
+app.patch('/todolist/:id', check_content_types([
+    'application/x-www-form-urlencoded',
+    'application/json'
+  ]),
+  json_parser,
+  urlencoded_parser,
+  check_params('body',['index','delete','value']),
+  check_list,
+  function(request,response,next) {
+    lists[request.params.id].data.splice(
+      request.body.index, request.body.delete, ...list_data(request.body.value));
+    response.data = lists[request.params.id];
+    send_json(request,response);
+  }
+);
+
+/*
+** GET /todolist/:id - return given todolist
+*/
+app.get('/todolist/:id',
+  check_list,
+  function(request,response,next) {
+    response.data = lists[request.params.id];
+    send_json(request,response);
+  }
+);
+
+/*
+** DELETE /todolist/:id - delete given todolist
+*/
+app.delete('/todolist/:id',
+  check_list,
+  function(request,response,next) {
+    delete lists[request.params.id];
+    response.status(204).end();
+  }
+);
 
 
 /*
@@ -154,6 +246,40 @@ app.use(function(request,response) {
 **
 ** ***************************************************************************/
 
+function check_list(request,response,next) {
+  var name = request.params.id;
+  if ( !lists[name] ) {
+    response.status(404).render( 'error.html', {
+      bgcolor: "#006",
+      code: "404 : Not Found",
+      msg:"La liste demandée n'existe pas"
+    });
+  }
+  else next();
+}
+function check_content_types(media_types) {
+  return function(request,response,next) {
+    var ct = request.get('Content-Type');
+    // 415 - Unsupported Media type
+    if ( media_types.indexOf(ct) == -1 ) {
+      response.detail = media_types;
+      send_415(request,response);
+    }
+    else next();
+  }
+}
+function check_params(ctx,params) {
+  return function(request,response,next) {
+    console.log('context',request[ctx]);
+    var missing = params.reduce((a,p) => request[ctx] && typeof request[ctx][p] != 'undefined' ? a : a.concat([p]),[]);
+    // 422 - Unprocessable entity
+    if ( missing.length ) {
+      response.detail = missing;
+      send_422(request,response);
+    }
+    else next();
+  }
+}
 function send_401(auth_method, realm, nonce='') {
   var supported = ['Basic','Digest']
     , method = (supported.indexOf(auth_method) > -1) ? auth_method : 'Basic'
@@ -184,6 +310,24 @@ function send_405(request,response) {
     bgcolor: "#600",
     code: "405 : Method Not Allowed",
     msg:"La méthode "+request.method+" n'est pas autorisée pour cette ressource"
+  });
+}
+function send_415(request,response) {
+  response.status(422).render( 'error.html', {
+    bgcolor: '#fa4',
+    code: "415 : Unsupported Media Type",
+    msg:"Type de contenu non supporté"+(response.detail ? " ('"+
+      response.detail.join("' ou '")+"' attendu)" : '')
+  });
+}
+function send_422(request,response) {
+  response.status(422).render( 'error.html', {
+    bgcolor: "#ec0",
+    code: "422 : Unprocessable Entity",
+    msg: "Impossible de traiter la requête"+(response.detail ?
+      ", paramètre"+(response.detail.length > 1 ? 's':'') +
+      " manquant"+(response.detail.length > 1 ? 's':'') + ' : ' +
+      response.detail.join(', ') : '')
   });
 }
 
