@@ -95,7 +95,7 @@ app.get('/encode/*', function(request,response,next) {
 /*
 ** HTTP Digest protected resource
 */
-let send_401_digest = send_401('Digest','BE-HTTP','abc');
+let send_401_digest = send_401('Digest','BE-HTTP');
 app.get('/digest.html', function(request,response,next) {
   var auth = request.headers.authorization;
   if ( auth ) {
@@ -293,17 +293,23 @@ function check_params(ctx,params) {
     else next();
   }
 }
-function send_401(auth_method, realm, nonce='') {
+function send_401(auth_method, realm) {
   var supported = ['Basic','Digest']
     , method = (supported.indexOf(auth_method) > -1) ? auth_method : 'Basic'
     , info = {
-        Basic: { color:'#066', auth: method+' realm="'+realm+'"' },
-        Digest: { color:'#060', auth: method+' realm="'+realm+'", nonce="'+nonce+'"' }
+        Basic: {
+          color:'#066',
+          auth: () => method+' realm="'+realm+'"'
+        },
+        Digest: {
+          color:'#060',
+          auth: (nonce) => method+' realm="'+realm+'", nonce="'+nonce+'"'
+        }
       }
   ;
   return function(request,response) {
     response.status(401).set({
-      'WWW-Authenticate': info[method].auth,
+      'WWW-Authenticate': info[method].auth(md5((new Date()).getTime())),
     }).render( 'error.html', {
       bgcolor: info[method].color,
       code: "401 : Authorization Required",
