@@ -112,7 +112,7 @@ app.get('/digest.html', function(request,response,next) {
 app.get('/401/digest/*', send_401_digest);
 
 // MD5
-app.get('/md5', function(request, response, next) {
+app.get('/md5/*', function(request, response, next) {
   var data = request.params[0];
   response.writeHead(200, {
     'Content-Type': 'text/plain; charset=utf-8'
