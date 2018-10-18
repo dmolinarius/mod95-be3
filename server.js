@@ -82,8 +82,8 @@ app.get('/401/basic', send_401_basic);
 
 // encode
 app.get('/encode/*', function(request,response,next) {
-  var url = request.url.substring(1)
-    , encoded = Buffer.from(url).toString('base64')
+  var data = request.params[0]
+    , encoded = Buffer.from(data).toString('base64')
   ;
   // console.log(url,encoded);
   response.writeHead(200, {
@@ -113,11 +113,11 @@ app.get('/401/digest/*', send_401_digest);
 
 // MD5
 app.get('/md5', function(request, response, next) {
-  var url = request.url.substring(1);
+  var data = request.params[0];
   response.writeHead(200, {
     'Content-Type': 'text/plain; charset=utf-8'
   });
-  response.end(md5(url));
+  response.end(md5(data));
 });
 
 
