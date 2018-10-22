@@ -73,15 +73,12 @@ app.get('/user.html', basic_auth('BE-HTTP', check_user));
 app.get('/401/basic', send_401('Basic','BE-HTTP'));
 
 // encode
-app.get('/encode/*', function(request,response,next) {
-  var data = request.params[0]
-    , encoded = Buffer.from(data).toString('base64')
-  ;
-  response.writeHead(200, {
-    'Content-Type': 'text/plain; charset=utf-8'
-  });
-  response.end(encoded);
-});
+app.get('/encode/*', (req,res,next) => {
+    res.body = Buffer.from(req.params[0]).toString('base64');
+    next();
+  },
+  send_text
+);
 
 /*
 ** HTTP Digest protected resource
@@ -103,13 +100,12 @@ app.get('/digest.html', function(request,response,next) {
 app.get('/401/digest/*', send_401_digest);
 
 // MD5
-app.get('/md5/*', function(request, response, next) {
-  var data = request.params[0];
-  response.writeHead(200, {
-    'Content-Type': 'text/plain; charset=utf-8'
-  });
-  response.end(md5(data));
-});
+app.get('/md5/*', (req,res,next) => {
+    res.body = md5(req.params[0]);
+    next();
+  },
+  send_text
+);
 
 
 /* ****************************************************************************
@@ -383,6 +379,13 @@ function send_fake(request, response) {
 function send_json(request, response) {
   response.writeHead(200, { 'Content-Type': 'application/json' });
   response.end(JSON.stringify(response.data || null));
+}
+
+function send_text(request, response) {
+  response.writeHead(200, { 
+    'Content-Type': 'text/plain; charset=utf-8'
+  });
+  response.end(response.body);
 }
 
 
