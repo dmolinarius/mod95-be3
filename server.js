@@ -103,6 +103,15 @@ app.get('/md5/*', (req,res,next) => {
   send_text
 );
 
+// debug
+app.get('/debug', (req,res,next) => {
+    res.body = req.ip;
+    next();
+  },
+  send_text
+);
+
+
 
 /* ****************************************************************************
 **
@@ -266,7 +275,6 @@ function check_content_types(media_types) {
 }
 function check_params(ctx,params) {
   return function(request,response,next) {
-    console.log('context',request[ctx]);
     var missing = params.reduce((a,p) => request[ctx] && typeof request[ctx][p] != 'undefined' ? a : a.concat([p]),[]);
     // 422 - Unprocessable entity
     if ( missing.length ) {
@@ -364,7 +372,6 @@ function digest_auth(realm, check_user, unknown_user=null, wrong_password=null) 
 function set_401_digest(realm) {
   var nonce = md5((new Date()).getTime());
   return function(request,response,next) {
-console.log('IP',request.ip)
     response.status(401).set({
       'WWW-Authenticate': 'Digest realm="'+realm+'", nonce="'+nonce+'"'
     });
