@@ -66,26 +66,17 @@ app.get('/perm', function(request,response,next) {
 /*
 ** HTTP Basic protected resource
 */
-let send_401_basic = send_401('Basic','BE-HTTP');
-app.get('/user.html', function(request,response,next) {
-  var auth = request.headers.authorization;
-  if ( auth && auth.indexOf('Basic') === 0 ) {
-    var encoded = auth.split(' ')[1].trim()
-      , decoded = new Buffer(encoded,'base64').toString('ascii')
-    ;
-    if ( decoded == 'be-http:cool!' ) next();
-    else send_401_basic(request,response);
-  }
-  else send_401_basic(request,response);
-});
-app.get('/401/basic', send_401_basic);
+function check_user(user,password) {
+  return user == 'be-http' && password == 'cool!';
+};
+app.get('/user.html', basic_auth('BE-HTTP', check_user));
+app.get('/401/basic', send_401('Basic','BE-HTTP'));
 
 // encode
 app.get('/encode/*', function(request,response,next) {
   var data = request.params[0]
     , encoded = Buffer.from(data).toString('base64')
   ;
-  // console.log(url,encoded);
   response.writeHead(200, {
     'Content-Type': 'text/plain; charset=utf-8'
   });
@@ -293,6 +284,23 @@ function check_params(ctx,params) {
     else next();
   }
 }
+
+function basic_auth(realm,check_user) {
+  var send_401_basic = send_401('Basic',realm);
+  return function (request,response,next) {
+    var auth = request.headers.authorization;
+    if ( auth && auth.indexOf('Basic') === 0 ) {
+      var encoded = auth.split(' ')[1].trim()
+        , decoded = new Buffer(encoded,'base64').toString('ascii')
+        , [user,password] = decoded.split(':')
+      ;
+      if ( check_user(user,password) ) next();
+      else send_401_basic(request,response);
+  }
+  else send_401_basic(request,response);
+  };
+}
+
 function send_401(auth_method, realm) {
   var supported = ['Basic','Digest']
     , method = (supported.indexOf(auth_method) > -1) ? auth_method : 'Basic'
