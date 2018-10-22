@@ -66,11 +66,12 @@ app.get('/perm', function(request,response,next) {
 /*
 ** HTTP Basic protected resource
 */
-function check_user(user,password) {
-  return user == 'be-http' && password == 'cool!';
+function check_basic_user(user,password) {
+  return (user == 'be-http' && password == 'cool!') ? {user, password} : null;
 };
-app.get('/user.html', basic_auth('BE-HTTP', check_user));
-app.get('/401/basic', send_401('Basic','BE-HTTP'));
+app.get('/user.html', basic_auth('BE-HTTP', check_basic_user));
+app.get('/401/basic', set_401_basic('BE-HTTP'));
+app.use(render_401_basic);
 
 // encode
 app.get('/encode/*', (req,res,next) => {
@@ -83,21 +84,16 @@ app.get('/encode/*', (req,res,next) => {
 /*
 ** HTTP Digest protected resource
 */
-let send_401_digest = send_401('Digest','BE-HTTP');
-app.get('/digest.html', function(request,response,next) {
-  var auth = request.headers.authorization;
-  if ( auth ) {
-    let info = auth_info(auth)
-      , A1 = md5(info.username+':'+info.realm+':'+'cool!')
-      , A2 = md5(request.method+':'+info.uri)
-      , expected = md5(A1+':'+info.nonce+':'+A2)
-    ;
-    if ( info.response == expected ) next();
-    else send_401_digest(request,response);
-  }
-  else send_401_digest(request,response);
-});
-app.get('/401/digest/*', send_401_digest);
+function check_digest_user(user) {
+  return (user == 'be-http' ) ? {user, password: "cool!"} : null;
+};
+app.get('/digest.html',
+  digest_auth('BE-HTTP', check_digest_user),
+  render_wrong_password,
+  render_unknown_user
+);
+app.get('/401/digest', set_401_digest('BE-HTTP'));
+app.use(render_401_digest);
 
 // MD5
 app.get('/md5/*', (req,res,next) => {
@@ -242,7 +238,7 @@ app.use(function(request,response) {
 
 /* ****************************************************************************
 **
-** Local middleware
+** List management middleware
 **
 ** ***************************************************************************/
 
@@ -281,46 +277,137 @@ function check_params(ctx,params) {
   }
 }
 
+/* ****************************************************************************
+**
+** Basic authentication middleware
+**
+** ***************************************************************************/
 function basic_auth(realm,check_user) {
-  var send_401_basic = send_401('Basic',realm);
+  var set_401 = set_401_basic(realm);
   return function (request,response,next) {
     var auth = request.headers.authorization;
     if ( auth && auth.indexOf('Basic') === 0 ) {
       var encoded = auth.split(' ')[1].trim()
-        , decoded = new Buffer(encoded,'base64').toString('ascii')
-        , [user,password] = decoded.split(':')
+        , decoded = Buffer.from(encoded,'base64').toString('ascii')
+        , [username,password] = decoded.split(':')
       ;
-      if ( check_user(user,password) ) next();
-      else send_401_basic(request,response);
+      request.user = check_user(username,password);
+      if ( request.user ) next();
+      else set_401(request,response,next);
   }
-  else send_401_basic(request,response);
+  else set_401(request,response,next);
   };
 }
-
-function send_401(auth_method, realm) {
-  var supported = ['Basic','Digest']
-    , method = (supported.indexOf(auth_method) > -1) ? auth_method : 'Basic'
-    , info = {
-        Basic: {
-          color:'#066',
-          auth: () => method+' realm="'+realm+'"'
-        },
-        Digest: {
-          color:'#060',
-          auth: (nonce) => method+' realm="'+realm+'", nonce="'+nonce+'"'
-        }
-      }
-  ;
-  return function(request,response) {
+function set_401_basic(realm) {
+  return function(request,response,next) {
     response.status(401).set({
-      'WWW-Authenticate': info[method].auth(md5((new Date()).getTime())),
-    }).render( 'error.html', {
-      bgcolor: info[method].color,
+      'WWW-Authenticate': 'Basic realm="'+realm+'"'
+    });
+    next(401);
+  }
+}
+function render_401_basic(err,req,res,next) {
+  if ( err == 401 ) {
+    res.render( 'error.html', {
+      bgcolor: '#066',
       code: "401 : Authorization Required",
       msg:"Ce document est protégé par mot de passe"
     });
+  }
+  else next(err);
+};
+
+
+/* ****************************************************************************
+**
+** Digest authentication middleware
+**
+** ***************************************************************************/
+function digest_auth_parser(request,response,next) {
+  var auth = request.headers.authorization;
+  if ( auth && auth.indexOf('Digest') === 0 ) {
+    request.auth_info =  auth.split(/,? /).reduce( function(o,s) {
+      let [k,v] = s.split('=');
+      if ( v ) {
+        v = v.trim();
+        o[k] = v.substr(1,v.length-2);
+      }
+      return o;
+    },{});
+    next();
+  }
+  else next(401);
+}
+function digest_auth(realm, check_user, unknown_user=null, wrong_password=null) {
+  var set_401 = set_401_digest(realm);
+  return function(request, response, next) {
+    digest_auth_parser(request, response, function(err) {
+      if ( err === 401) set_401(request,response,next); // No Digest authorization field
+      else if (err) next(err);	                        // Other error
+      else {
+        request.user = check_user(request.auth_info.username);
+        if ( request.user ) {
+          let info = request.auth_info
+            , password = request.user.password
+            , A1 = md5(info.username+':'+info.realm+':'+password)
+            , A2 = md5(request.method+':'+info.uri)
+            , expected = md5(A1+':'+info.nonce+':'+A2)
+          ;
+          if ( info.response == expected ) next(); // user is authenticated
+          else set_401(request,response,next);     // wrong password
+        }
+        else set_401(request,response,next);       // unknown user name
+      }
+    });
   };
 }
+function set_401_digest(realm) {
+  var nonce = md5((new Date()).getTime());
+  return function(request,response,next) {
+console.log('IP',request.ip)
+    response.status(401).set({
+      'WWW-Authenticate': 'Digest realm="'+realm+'", nonce="'+nonce+'"'
+    });
+    next(401);
+  }
+}
+function render_401_digest(err,req,res,next) {
+  if ( err == 401 ) {
+    res.render( 'error.html', {
+      bgcolor: '#060',
+      code: "401 : Authorization Required",
+      msg: "Ce document est protégé par mot de passe"
+    });
+  }
+  else next(err);
+}
+function render_unknown_user(err,req,res,next) {
+  if ( err == 401 && req.auth_info ) {
+    res.render( 'error.html', {
+      bgcolor: '#a66',
+      code: "401 : Authorization Required",
+      msg: "L'utilisateur "+req.auth_info.username+" est inconnu de nos services"
+    });
+  }
+  else next(err);
+}
+function render_wrong_password(err,req,res,next) {
+  if ( err == 401 && req.user ) {
+    res.render( 'error.html', {
+      bgcolor: '#6a6',
+      code: "401 : Authorization Required",
+      msg: "Mot de passe erroné"
+    });
+  }
+  else next(err);
+}
+
+
+/* ****************************************************************************
+**
+** Middleware to send default status messages
+**
+** ***************************************************************************/
 function send_404(request,response) {
   response.status(404).render( 'error.html', {
     bgcolor: "#006",
@@ -354,6 +441,12 @@ function send_422(request,response) {
   });
 }
 
+
+/* ****************************************************************************
+**
+** Middleware to send body with various content-type
+**
+** ***************************************************************************/
 function send_fake(request, response) {
   var file = request.params.file
     , type = request.params.type
@@ -386,25 +479,6 @@ function send_text(request, response) {
     'Content-Type': 'text/plain; charset=utf-8'
   });
   response.end(response.body);
-}
-
-
-/* ****************************************************************************
-**
-** Other functions
-**
-** ***************************************************************************/
-
-// get info from auth string
-function auth_info(auth) {
-  return auth.split(/,? /).reduce( function(o,s) {
-    let [k,v] = s.split('=');
-    if ( v ) {
-      v = v.trim();
-      o[k] = v.substr(1,v.length-2);
-    }
-    return o;
-  },{});
 }
 
 
