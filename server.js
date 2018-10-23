@@ -322,9 +322,51 @@ function basic_auth(realm,check_user) {
 **
 ** ***************************************************************************/
 
+nonces = [];
+function create_nonce(request) {
+  var ip = request.ip
+    , time = (new Date()).getTime()
+    , method = request.method
+    , nonce = md5(method+':'+time+':'+ip)
+  ;
+  nonces[nonce] = {ip, time, method};
+  setTimeout(() => {
+    delete nonces[nonce];
+  },3600000); // 1 hour
+  return nonce;
+}
+function check_nonce(request,response,next) {
+  var info = request.auth_info
+    , ip = request.ip
+    , method = request.method
+    , time = (new Date()).getTime()
+    , nonce = info.nonce
+  ;
+  if ( ! nonce ) {
+    err(401).digest(info.realm,create_nonce)(request,response,next);
+  }
+  else if ( !nonces[nonce] ) {
+    err(401,'Illegal nonce').digest(info.realm,create_nonce)(request,response,next);
+  }
+  else {
+    nonce_info = nonces[nonce];
+    if ( nonce_info.ip != ip ) {
+      err(401,'IP not allowed').digest(info.realm,create_nonce)(request,response,next);
+    }
+    else if ( nonce_info.method != method ) {
+      err(401,'Method not allowed').digest(info.realm,create_nonce)(request,response,next);
+    }
+    // nonce duration is 30s - too short for a static server, more than enough for an API
+    else if ( time - nonce_info.time > 30000 ) {
+      err(401,'Stale nonce').digest(info.realm,create_nonce)(request,response,next);
+    }
+    else next();
+  }
+}
+
 function digest_auth_parser(request,response,next) {
   var auth = request.headers.authorization
-    , err_401 = err(401).digest(realm)
+    , err_401 = err(401) // no message
   ;
   if ( auth && auth.indexOf('Digest') === 0 ) {
     request.auth_info =  auth.split(/,? /).reduce( function(o,s) {
@@ -337,31 +379,34 @@ function digest_auth_parser(request,response,next) {
     },{});
     next();
   }
-  else err_401(request,response,next); // no Digest Authorization header
+  else next(err_401); // no Digest Authorization header
 }
 
 function digest_auth(realm, check_user) {
   return function(request, response, next) {
     digest_auth_parser(request, response, function(error) {
-      if (error) next(error);
-      else {
-        let info = request.auth_info
-          , A1 = check_user(info.username, info.realm)
-        ;
-        if ( A1 === null ) {
-          err(401,'unknown user').digest(realm)(request, response, next);
-        }
-        else if ( A1 === undefined ) {
-          err(401,'realm not allowed').digest(realm)(request, response, next);
-        }
+      if (error) error.digest(realm,create_nonce)(request, response, next);
+      else check_nonce(request, response, function(error) {
+        if (error) next(error);
         else {
-          let A2 = md5(request.method+':'+info.uri)
-            , expected = md5(A1+':'+info.nonce+':'+A2)
+          let info = request.auth_info
+            , A1 = check_user(info.username, info.realm)
           ;
-          if ( info.response == expected ) next(); // user is authenticated
-          else err(401,'wrong password').digest(realm)(request, response, next);
+          if ( A1 === null ) {
+            err(401,'unknown user').digest(realm,create_nonce)(request, response, next);
+          }
+          else if ( A1 === undefined ) {
+            err(401,'realm not allowed').digest(realm,create_nonce)(request, response, next);
+          }
+          else {
+            let A2 = md5(request.method+':'+info.uri)
+              , expected = md5(A1+':'+info.nonce+':'+A2)
+            ;
+            if ( info.response == expected ) next(); // user is authenticated
+            else err(401,'wrong password').digest(realm,create_nonce)(request, response, next);
+          }
         }
-      }
+      });
     });
   };
 }
@@ -521,16 +566,18 @@ function render_401_basic(error, request ,response, next) {
   else next(error);
 };
 function render_401_digest(error, request, response, next) {
+  // console.log('hello from render_401_digest',error);
   if ( error && error.code == 401 && error.nonce ) {
     response.render( 'error.html', {
       bgcolor: '#060',
       code: "401 : Authorization Required",
-      msg: "Ce document est protégé par mot de passe"
+      msg: error.message || "Ce document est protégé par mot de passe"
     });
   }
   else next(error);
 }
 function render_unknown_user(error, request, response, next) {
+  // console.log('hello from render_unknown_user',error);
   if ( error && error.code == 401 && error.message == 'unknown user') {
     response.render( 'error.html', {
       bgcolor: '#060',
@@ -541,6 +588,7 @@ function render_unknown_user(error, request, response, next) {
   else next(error);
 }
 function render_wrong_password(error, request, response, next) {
+  // console.log('hello from render_wrong_password',error);
   if ( error && error.code == 401 && error.message == 'wrong password' ) {
     response.render( 'error.html', {
       bgcolor: '#060',
@@ -551,6 +599,7 @@ function render_wrong_password(error, request, response, next) {
   else next(error);
 }
 function render_unallowed_realm(error, request, response, next) {
+  // console.log('hello from render_unallowed_realm',error);
   if ( error && error.code == 401 && error.message == 'realm not allowed' ) {
     response.render( 'error.html', {
       bgcolor: '#060',
