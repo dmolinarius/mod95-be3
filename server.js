@@ -86,14 +86,20 @@ app.get('/encode/*', (req,res,next) => {
 /*
 ** HTTP Digest protected resource
 */
-function check_digest_user(user) {
-  return (user == 'be-http' ) ? {user, password: "cool!"} : null;
+function check_digest_user(user,realm) {
+  var users = { 'be-http': { 'BE-HTTP': md5('be-http:BE-HTTP:cool!') } };
+  return users[user] ? users[user][realm] : null;
 };
 
 realm = 'BE-HTTP';
 app.get('/digest.html', digest_auth(realm, check_digest_user));
 app.get('/401/digest', (req,res,next) => next(err(401).digest(realm)));
-app.use(render_unknown_user, render_wrong_password, render_401_digest);
+
+realm = 'Digest 2';
+app.get('/digest2.html', digest_auth(realm, check_digest_user));
+app.get('/401/digest2', (req,res,next) => next(err(401).digest(realm)));
+
+app.use(render_unknown_user, render_unallowed_realm, render_wrong_password, render_401_digest);
 
 // MD5
 app.get('/md5/*', (req,res,next) => {
@@ -339,18 +345,22 @@ function digest_auth(realm, check_user) {
     digest_auth_parser(request, response, function(error) {
       if (error) next(error);
       else {
-        request.user = check_user(request.auth_info.username);
-        if ( request.user ) {
-          let info = request.auth_info
-            , password = request.user.password
-            , A1 = md5(info.username+':'+info.realm+':'+password)
-            , A2 = md5(request.method+':'+info.uri)
+        let info = request.auth_info
+          , A1 = check_user(info.username, info.realm)
+        ;
+        if ( A1 === null ) {
+          err(401,'unknown user').digest(realm)(request, response, next);
+        }
+        else if ( A1 === undefined ) {
+          err(401,'realm not allowed').digest(realm)(request, response, next);
+        }
+        else {
+          let A2 = md5(request.method+':'+info.uri)
             , expected = md5(A1+':'+info.nonce+':'+A2)
           ;
           if ( info.response == expected ) next(); // user is authenticated
           else err(401,'wrong password').digest(realm)(request, response, next);
         }
-        else err(401,'unknown user').digest(realm)(request, response, next);
       }
     });
   };
@@ -511,7 +521,6 @@ function render_401_basic(error, request ,response, next) {
   else next(error);
 };
 function render_401_digest(error, request, response, next) {
-  console.log('hello from render_401_digest',error,request.auth_info,request.user);
   if ( error && error.code == 401 && error.nonce ) {
     response.render( 'error.html', {
       bgcolor: '#060',
@@ -522,7 +531,6 @@ function render_401_digest(error, request, response, next) {
   else next(error);
 }
 function render_unknown_user(error, request, response, next) {
-  console.log('hello from render_unknow_user',error,request.auth_info,request.user);
   if ( error && error.code == 401 && error.message == 'unknown user') {
     response.render( 'error.html', {
       bgcolor: '#060',
@@ -533,7 +541,6 @@ function render_unknown_user(error, request, response, next) {
   else next(error);
 }
 function render_wrong_password(error, request, response, next) {
-  console.log('hello from render_wrong_password',error,request.auth_info,request.user);
   if ( error && error.code == 401 && error.message == 'wrong password' ) {
     response.render( 'error.html', {
       bgcolor: '#060',
@@ -543,6 +550,17 @@ function render_wrong_password(error, request, response, next) {
   }
   else next(error);
 }
+function render_unallowed_realm(error, request, response, next) {
+  if ( error && error.code == 401 && error.message == 'realm not allowed' ) {
+    response.render( 'error.html', {
+      bgcolor: '#060',
+      code: "401 : Authorization Required",
+      msg: "Zone interdite"
+    });
+  }
+  else next(error);
+}
+
 
 /* ****************************************************************************
 **
