@@ -69,8 +69,10 @@ app.get('/perm', function(request,response,next) {
 function check_basic_user(user,password) {
   return (user == 'be-http' && password == 'cool!') ? {user, password} : null;
 };
-app.get('/user.html', basic_auth('BE-HTTP', check_basic_user));
-app.get('/401/basic', set_401_basic('BE-HTTP'));
+
+realm = 'BE-HTTP';
+app.get('/user.html', basic_auth(realm, check_basic_user));
+app.get('/401/basic', (req,res,next) => next(err(401).basic(realm)));
 app.use(render_401_basic);
 
 // encode
@@ -87,13 +89,11 @@ app.get('/encode/*', (req,res,next) => {
 function check_digest_user(user) {
   return (user == 'be-http' ) ? {user, password: "cool!"} : null;
 };
-app.get('/digest.html',
-  digest_auth('BE-HTTP', check_digest_user),
-  render_wrong_password,
-  render_unknown_user
-);
-app.get('/401/digest', set_401_digest('BE-HTTP'));
-app.use(render_401_digest);
+
+realm = 'BE-HTTP';
+app.get('/digest.html', digest_auth(realm, check_digest_user));
+app.get('/401/digest', (req,res,next) => next(err(401).digest(realm)));
+app.use(render_unknown_user, render_wrong_password, render_401_digest);
 
 // MD5
 app.get('/md5/*', (req,res,next) => {
@@ -290,10 +290,12 @@ function check_params(ctx,params) {
 ** Basic authentication middleware
 **
 ** ***************************************************************************/
+
 function basic_auth(realm,check_user) {
-  var set_401 = set_401_basic(realm);
   return function (request,response,next) {
-    var auth = request.headers.authorization;
+    var auth = request.headers.authorization
+      , err_401 = err(401).basic(realm)
+    ;
     if ( auth && auth.indexOf('Basic') === 0 ) {
       var encoded = auth.split(' ')[1].trim()
         , decoded = Buffer.from(encoded,'base64').toString('ascii')
@@ -301,29 +303,11 @@ function basic_auth(realm,check_user) {
       ;
       request.user = check_user(username,password);
       if ( request.user ) next();
-      else set_401(request,response,next);
-  }
-  else set_401(request,response,next);
+      else err_401(request,response,next);
+    }
+    else err_401(request,response,next);
   };
 }
-function set_401_basic(realm) {
-  return function(request,response,next) {
-    response.status(401).set({
-      'WWW-Authenticate': 'Basic realm="'+realm+'"'
-    });
-    next(401);
-  }
-}
-function render_401_basic(err,req,res,next) {
-  if ( err == 401 ) {
-    res.render( 'error.html', {
-      bgcolor: '#066',
-      code: "401 : Authorization Required",
-      msg:"Ce document est protégé par mot de passe"
-    });
-  }
-  else next(err);
-};
 
 
 /* ****************************************************************************
@@ -331,8 +315,11 @@ function render_401_basic(err,req,res,next) {
 ** Digest authentication middleware
 **
 ** ***************************************************************************/
+
 function digest_auth_parser(request,response,next) {
-  var auth = request.headers.authorization;
+  var auth = request.headers.authorization
+    , err_401 = err(401).digest(realm)
+  ;
   if ( auth && auth.indexOf('Digest') === 0 ) {
     request.auth_info =  auth.split(/,? /).reduce( function(o,s) {
       let [k,v] = s.split('=');
@@ -344,14 +331,13 @@ function digest_auth_parser(request,response,next) {
     },{});
     next();
   }
-  else next(401);
+  else err_401(request,response,next); // no Digest Authorization header
 }
-function digest_auth(realm, check_user, unknown_user=null, wrong_password=null) {
-  var set_401 = set_401_digest(realm);
+
+function digest_auth(realm, check_user) {
   return function(request, response, next) {
-    digest_auth_parser(request, response, function(err) {
-      if ( err === 401) set_401(request,response,next); // No Digest authorization field
-      else if (err) next(err);	                        // Other error
+    digest_auth_parser(request, response, function(error) {
+      if (error) next(error);
       else {
         request.user = check_user(request.auth_info.username);
         if ( request.user ) {
@@ -362,51 +348,12 @@ function digest_auth(realm, check_user, unknown_user=null, wrong_password=null) 
             , expected = md5(A1+':'+info.nonce+':'+A2)
           ;
           if ( info.response == expected ) next(); // user is authenticated
-          else set_401(request,response,next);     // wrong password
+          else err(401,'wrong password').digest(realm)(request, response, next);
         }
-        else set_401(request,response,next);       // unknown user name
+        else err(401,'unknown user').digest(realm)(request, response, next);
       }
     });
   };
-}
-function set_401_digest(realm) {
-  var nonce = md5((new Date()).getTime());
-  return function(request,response,next) {
-    response.status(401).set({
-      'WWW-Authenticate': 'Digest realm="'+realm+'", nonce="'+nonce+'"'
-    });
-    next(401);
-  }
-}
-function render_401_digest(err,req,res,next) {
-  if ( err == 401 ) {
-    res.render( 'error.html', {
-      bgcolor: '#060',
-      code: "401 : Authorization Required",
-      msg: "Ce document est protégé par mot de passe"
-    });
-  }
-  else next(err);
-}
-function render_unknown_user(err,req,res,next) {
-  if ( err == 401 && req.auth_info ) {
-    res.render( 'error.html', {
-      bgcolor: '#a66',
-      code: "401 : Authorization Required",
-      msg: "L'utilisateur "+req.auth_info.username+" est inconnu de nos services"
-    });
-  }
-  else next(err);
-}
-function render_wrong_password(err,req,res,next) {
-  if ( err == 401 && req.user ) {
-    res.render( 'error.html', {
-      bgcolor: '#6a6',
-      code: "401 : Authorization Required",
-      msg: "Mot de passe erroné"
-    });
-  }
-  else next(err);
 }
 
 
@@ -451,16 +398,16 @@ function send_422(request,response) {
 
 /* ****************************************************************************
 **
-** Middleware to send body with various content-type
+** Middleware to send body with various content-types
 **
 ** ***************************************************************************/
 function send_fake(request, response) {
   var file = request.params.file
     , type = request.params.type
   ;
-  fs.stat(file, function(err, stats) {
-    if ( err ) {
-	console.log(err);
+  fs.stat(file, function(error, stats) {
+    if ( error ) {
+	console.log(error);
         send_404(response);
         return;
     }
@@ -482,12 +429,120 @@ function send_json(request, response) {
 }
 
 function send_text(request, response) {
-  response.writeHead(200, { 
+  response.writeHead(200, {
     'Content-Type': 'text/plain; charset=utf-8'
   });
   response.end(response.body);
 }
 
+
+/* ****************************************************************************
+**
+** Status generator middleware
+**
+** Usage (examples all return a middleware calling next with an error object) :
+**
+**  - err(401,message).basic(realm)
+**      calls next with {code, message, realm}
+**
+**  - err(401,message).digest(realm, nonce_generator=null)
+**      calls next with {code, message, realm, nonce}
+**
+**  - err(other_status,message)
+**      calls next with {code, message}
+**
+** Helper functions signature :
+**  - nonce_generator(request) returns nonce
+**
+** ***************************************************************************/
+
+function err(code, message=null) {
+  var error = { code, message };
+
+  // 401 needs authentication header
+  if ( code == 401 ) {
+    return {
+
+      // basic authentication
+      basic: function(realm) {
+        return function(request, response, next) {
+          response.status(code).set({
+            'WWW-Authenticate': 'Basic realm="'+err.realm+'"'
+          });
+          next({...error, realm});
+        };
+      },
+
+      // digest authentication
+      digest: function(realm, nonce_gen=null) {
+        nonce_gen = nonce_gen || (() => md5((new Date()).getTime()));
+        return function(request, response, next) {
+          var nonce = nonce_gen(request);
+          response.status(code).set({
+            'WWW-Authenticate': 'Digest realm="'+realm+'", nonce="'+nonce+'"'
+          });
+          next({...error, realm, nonce});
+        };
+      }
+    }
+  }
+  else {
+    return function(request, response, next) {
+      response.status(code);
+      next(error);
+    }
+  }
+}
+
+/* ****************************************************************************
+**
+** Error rendering middleware
+**
+** ***************************************************************************/
+
+function render_401_basic(error, request ,response, next) {
+  if ( error && error.code == 401 && !error.nonce ) {
+    response.render( 'error.html', {
+      bgcolor: '#066',
+      code: "401 : Authorization Required",
+      msg:"Ce document est protégé par mot de passe"
+    });
+  }
+  else next(error);
+};
+function render_401_digest(error, request, response, next) {
+  console.log('hello from render_401_digest',error,request.auth_info,request.user);
+  if ( error && error.code == 401 && error.nonce ) {
+    response.render( 'error.html', {
+      bgcolor: '#060',
+      code: "401 : Authorization Required",
+      msg: "Ce document est protégé par mot de passe"
+    });
+  }
+  else next(error);
+}
+function render_unknown_user(error, request, response, next) {
+  console.log('hello from render_unknow_user',error,request.auth_info,request.user);
+  if ( error && error.code == 401 && error.message == 'unknown user') {
+    response.render( 'error.html', {
+      bgcolor: '#060',
+      code: "401 : Authorization Required",
+      msg: "L'utilisateur "+request.auth_info.username+" est inconnu de nos services"
+    });
+  }
+  else next(error);
+}
+function render_wrong_password(error, request, response, next) {
+  console.log('hello from render_wrong_password',error,request.auth_info,request.user);
+  if ( error && error.code == 401 && error.message == 'wrong password' ) {
+    response.render( 'error.html', {
+      bgcolor: '#060',
+      code: "401 : Authorization Required",
+      msg: "Mot de passe erroné"
+    });
+  }
+  else next(error);
+}
 
 /* ****************************************************************************
 **
