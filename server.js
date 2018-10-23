@@ -64,7 +64,7 @@ app.get('/perm', function(request,response,next) {
 });
 
 /*
-** HTTP Basic protected resource
+** HTTP Basic protected resources
 */
 function check_basic_user(user,password) {
   return (user == 'be-http' && password == 'cool!') ? {user, password} : null;
@@ -84,10 +84,11 @@ app.get('/encode/*', (req,res,next) => {
 );
 
 /*
-** HTTP Digest protected resource
+** HTTP Digest protected resources
 */
 function check_digest_user(user,realm) {
   var users = { 'be-http': { 'BE-HTTP': md5('be-http:BE-HTTP:cool!') } };
+  console.log('check_digest_user',user,realm,users);
   return users[user] ? users[user][realm] : null;
 };
 
@@ -390,7 +391,7 @@ function digest_auth(realm, check_user) {
         if (error) next(error);
         else {
           let info = request.auth_info
-            , A1 = check_user(info.username, info.realm)
+            , A1 = check_user(info.username, realm)
           ;
           if ( A1 === null ) {
             err(401,'unknown user').digest(realm,create_nonce)(request, response, next);
