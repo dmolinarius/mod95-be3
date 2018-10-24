@@ -351,10 +351,11 @@ function check_nonce(request,response,next) {
   }
   else {
     nonce_info = nonces[nonce];
-    if ( nonce_info.ip != ip ) {
-      err(401,'IP not allowed '+nonce_info.ip+', '+ip).digest(info.realm,create_nonce)(request,response,next);
-    }
-    else if ( nonce_info.method != method ) {
+    // does not work on heroku, IPs do not match from one request to another one...
+    // if ( nonce_info.ip != ip ) {
+    //   err(401,'IP not allowed '+nonce_info.ip+', '+ip).digest(info.realm,create_nonce)(request,response,next);
+    // }
+    if ( nonce_info.method != method ) {
       err(401,'Method not allowed').digest(info.realm,create_nonce)(request,response,next);
     }
     // nonce duration is 30s - too short for a static server, more than enough for an API
