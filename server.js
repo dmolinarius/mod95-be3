@@ -72,7 +72,7 @@ function check_basic_user(user,password) {
 
 realm = 'BE-HTTP';
 app.get('/user.html', basic_auth(realm, check_basic_user));
-app.get('/401/basic', (req,res,next) => next(err(401).basic(realm)));
+app.get('/401/basic', err(401).basic(realm));
 app.use(render_401_basic);
 
 // encode
@@ -94,11 +94,11 @@ function check_digest_user(user,realm) {
 
 realm = 'BE-HTTP';
 app.get('/digest.html', digest_auth(realm, check_digest_user));
-app.get('/401/digest', (req,res,next) => next(err(401).digest(realm)));
+app.get('/401/digest', err(401).digest(realm,create_nonce));
 
 realm = 'Digest 2';
 app.get('/digest2.html', digest_auth(realm, check_digest_user));
-app.get('/401/digest2', (req,res,next) => next(err(401).digest(realm)));
+app.get('/401/digest2', err(401).digest(realm,create_nonce));
 
 app.use(render_unknown_user, render_unallowed_realm, render_wrong_password, render_401_digest);
 
@@ -523,7 +523,7 @@ function err(code, message=null) {
       basic: function(realm) {
         return function(request, response, next) {
           response.status(code).set({
-            'WWW-Authenticate': 'Basic realm="'+err.realm+'"'
+            'WWW-Authenticate': 'Basic realm="'+realm+'"'
           });
           next({...error, realm});
         };
