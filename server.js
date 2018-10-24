@@ -352,7 +352,7 @@ function check_nonce(request,response,next) {
   else {
     nonce_info = nonces[nonce];
     if ( nonce_info.ip != ip ) {
-      err(401,'IP not allowed').digest(info.realm,create_nonce)(request,response,next);
+      err(401,'IP not allowed '+nonce_info.ip+', '+ip).digest(info.realm,create_nonce)(request,response,next);
     }
     else if ( nonce_info.method != method ) {
       err(401,'Method not allowed').digest(info.realm,create_nonce)(request,response,next);
