@@ -112,7 +112,7 @@ app.get('/md5/*', (req,res,next) => {
 
 // debug
 app.get('/debug', (req,res,next) => {
-    res.body = req.ip;
+    res.body = get_client_ip(req);
     next();
   },
   send_text
@@ -413,6 +413,13 @@ function digest_auth(realm, check_user) {
   };
 }
 
+/*
+** cf. https://stackoverflow.com/questions/18264304/get-clients-real-ip-address-on-heroku
+*/
+function get_client_ip(request) {
+  var xff = request.headers['X-Forwarded-For'];
+  return (xff && xff.split(',').pop().trim()) || request.ip;
+}
 
 /* ****************************************************************************
 **
