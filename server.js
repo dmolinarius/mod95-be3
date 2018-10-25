@@ -88,7 +88,6 @@ app.get('/encode/*', (req,res,next) => {
 */
 function check_digest_user(user,realm) {
   var users = { 'be-http': { 'BE-HTTP': md5('be-http:BE-HTTP:cool!') } };
-  console.log('check_digest_user',user,realm,users);
   return users[user] ? users[user][realm] : null;
 };
 
