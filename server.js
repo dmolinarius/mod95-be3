@@ -110,15 +110,6 @@ app.get('/md5/*', (req,res,next) => {
   send_text
 );
 
-// debug
-app.get('/debug', (req,res,next) => {
-    res.body = get_client_ip(req);
-    next();
-  },
-  send_text
-);
-
-
 
 /* ****************************************************************************
 **
@@ -325,7 +316,7 @@ function basic_auth(realm,check_user) {
 
 nonces = [];
 function create_nonce(request) {
-  var ip = request.ip
+  var ip = get_client_ip(request)
     , time = (new Date()).getTime()
     , method = request.method
     , nonce = md5(method+':'+time+':'+ip)
@@ -338,7 +329,7 @@ function create_nonce(request) {
 }
 function check_nonce(request,response,next) {
   var info = request.auth_info
-    , ip = request.ip
+    , ip = get_client_ip(request)
     , method = request.method
     , time = (new Date()).getTime()
     , nonce = info.nonce
@@ -351,11 +342,10 @@ function check_nonce(request,response,next) {
   }
   else {
     nonce_info = nonces[nonce];
-    // does not work on heroku, IPs do not match from one request to another one...
-    // if ( nonce_info.ip != ip ) {
-    //   err(401,'IP not allowed '+nonce_info.ip+', '+ip).digest(info.realm,create_nonce)(request,response,next);
-    // }
-    if ( nonce_info.method != method ) {
+    if ( nonce_info.ip != ip ) {
+      err(401,'IP not allowed '+nonce_info.ip+', '+ip).digest(info.realm,create_nonce)(request,response,next);
+    }
+    else if ( nonce_info.method != method ) {
       err(401,'Method not allowed').digest(info.realm,create_nonce)(request,response,next);
     }
     // nonce duration is 30s - too short for a static server, more than enough for an API
@@ -418,7 +408,6 @@ function digest_auth(realm, check_user) {
 */
 function get_client_ip(request) {
   var xff = request.headers['x-forwarded-for'];
-  console.log(request.headers);
   return (xff && xff.split(',').pop().trim()) || request.ip;
 }
 
