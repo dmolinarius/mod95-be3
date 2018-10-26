@@ -388,7 +388,7 @@ function default_check_nonce(req,res,next) {
 ** ***************************************************************************/
 
 function digest_auth_parser(realm, create_nonce) {
-  create_nonce = create_nonce || def_nonce_gen;
+  create_nonce = create_nonce || default_create_nonce;
   return function (request,response,next) {
     var auth = request.headers.authorization;
     if ( auth && auth.indexOf('Digest') === 0 ) {
@@ -651,7 +651,7 @@ function err(code, message=null) {
       },
 
       // digest authentication
-      digest: function(realm, create_nonce=def_nonce_gen) {
+      digest: function(realm, create_nonce=default_create_nonce) {
         return function(request, response, next) {
           var nonce = create_nonce(request);
           response.status(code).set({
