@@ -676,31 +676,38 @@ function err(code, message=null) {
 **
 ** ***************************************************************************/
 
+error_401_data = {
+    bgcolor: '#060',
+    code: "401 - Authorization Required"
+}
 error_data = {
-  "401_basic": {
+  "401_basic": { ...error_401_data,
     bgcolor: '#066',
-    code: "401 - Authorization Required",
     default_message: "Ce document est protégé par mot de passe"
   },
-  "401_digest": {
-    bgcolor: '#060',
-    code: "401 - Authorization Required",
+  "401_digest": { ...error_401_data,
     default_message: "Ce document est protégé par mot de passe"
   },
-  "unknown user": {
-    bgcolor: '#060',
-    code: "401 - Authorization Required",
+  "unknown user": { ...error_401_data,
     default_message: "Utilisateur inconnu"
   },
-  "wrong password": {
-    bgcolor: '#060',
-    code: "401 - Authorization Required",
+  "wrong password": { ...error_401_data,
     default_message: "Mot de passe erroné"
   },
-  'realm not allowed': {
-    bgcolor: '#060',
-    code: "401 - Authorization Required",
+  'realm not allowed': { ...error_401_data,
     default_message: "Zone interdite"
+  },
+  'Illegal nonce': { ...error_401_data,
+    default_message: "Nonce incorrect"
+  },
+  'IP not allowed' : { ...error_401_data,
+    default_message: "Adresse IP incorrecte"
+  },
+  'Method not allowed': { ...error_401_data,
+    default_message: "Méthode incorrecte"
+  },
+  'Stale nonce' : { ...error_401_data,
+    default_message: "Durée de validité du nonce dépassée"
   },
   'no auth_info': {
     bgcolor: '#c00',
