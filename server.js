@@ -73,7 +73,6 @@ function check_basic_user(user,password) {
 realm = 'BE-HTTP';
 app.get('/user.html', basic_auth(realm, check_basic_user));
 app.get('/401/basic', err(401).basic(realm));
-app.use(render_401_basic);
 
 // encode
 app.get('/encode/*', (req,res,next) => {
@@ -99,7 +98,7 @@ realm = 'Digest 2';
 app.get('/digest2.html', digest_auth(realm, check_digest_user, create_nonce, check_nonce));
 app.get('/401/digest2', err(401).digest(realm,create_nonce));
 
-app.use(render_unknown_user, render_unallowed_realm, render_wrong_password, render_401_digest);
+app.use(render_error);
 
 // MD5
 app.get('/md5/*', (req,res,next) => {
@@ -677,58 +676,65 @@ function err(code, message=null) {
 **
 ** ***************************************************************************/
 
-function render_401_basic(error, request ,response, next) {
-  // console.log('hello from render_401_basic',error);
-  if ( error && error.code == 401 && !error.nonce ) {
-    response.render( 'error.html', {
-      bgcolor: '#066',
-      code: "401 : Authorization Required",
-      msg:"Ce document est protégé par mot de passe"
-    });
+error_data = {
+  "401_basic": {
+    bgcolor: '#066',
+    code: "401 - Authorization Required",
+    default_message: "Ce document est protégé par mot de passe"
+  },
+  "401_digest": {
+    bgcolor: '#060',
+    code: "401 - Authorization Required",
+    default_message: "Ce document est protégé par mot de passe"
+  },
+  "unknown user": {
+    bgcolor: '#060',
+    code: "401 - Authorization Required",
+    default_message: "Utilisateur inconnu"
+  },
+  "wrong password": {
+    bgcolor: '#060',
+    code: "401 - Authorization Required",
+    default_message: "Mot de passe erroné"
+  },
+  'realm not allowed': {
+    bgcolor: '#060',
+    code: "401 - Authorization Required",
+    default_message: "Zone interdite"
+  },
+  'no auth_info': {
+    bgcolor: '#c00',
+    code: "500 - Internal server error",
+    default_message: "Dysfonctionnement inattendu, il manque auth_info"
+  },
+  '500': {
+    bgcolor: '#c00',
+    code: "500 - Internal server error",
+    default_message: "Dysfonctionnement serveur"
+  },
+  'default': {
+    bgcolor: '#aaa',
+    default_message: ""
   }
-  else next(error);
 };
-function render_401_digest(error, request, response, next) {
-  // console.log('hello from render_401_digest',error);
-  if ( error && error.code == 401 && error.nonce ) {
-    response.render( 'error.html', {
-      bgcolor: '#060',
-      code: "401 : Authorization Required",
-      msg: error.message || "Ce document est protégé par mot de passe"
-    });
+
+function render_error(error, request, response, next) {
+  var render = (o) => response.render('error.html', o);
+  console.log('hello from render_error',error);
+  if ( ! error ) next();
+  if ( error.code == 401 ) {
+    if ( error.message == 'unknown user') render({...error_data[error.message],
+         message: "L'utilisateur "+request.auth_info.username+" est inconnu de nos services" });
+    else if ( !error.nonce ) render(error_data['401_basic']);
+    else if ( error.message in error_data ) render(error_data[error.message]);
+    else render({...error_data['401_digest'], message:error.message});
   }
-  else next(error);
-}
-function render_unknown_user(error, request, response, next) {
-  // console.log('hello from render_unknown_user',error);
-  if ( error && error.code == 401 && error.message == 'unknown user') {
-    response.render( 'error.html', {
-      bgcolor: '#060',
-      code: "401 : Authorization Required",
-      msg: "L'utilisateur "+request.auth_info.username+" est inconnu de nos services"
-    });
+  else if ( error.code == 500 ) {
+    if ( error.message in error_data ) render(error_data[error.message]);
+    else render({...error_data['500'], ...error});
   }
-  else next(error);
-}
-function render_wrong_password(error, request, response, next) {
-  // console.log('hello from render_wrong_password',error);
-  if ( error && error.code == 401 && error.message == 'wrong password' ) {
-    response.render( 'error.html', {
-      bgcolor: '#060',
-      code: "401 : Authorization Required",
-      msg: "Mot de passe erroné"
-    });
-  }
-  else next(error);
-}
-function render_unallowed_realm(error, request, response, next) {
-  // console.log('hello from render_unallowed_realm',error);
-  if ( error && error.code == 401 && error.message == 'realm not allowed' ) {
-    response.render( 'error.html', {
-      bgcolor: '#060',
-      code: "401 : Authorization Required",
-      msg: "Zone interdite"
-    });
+  else if ( error.code ) {
+    render({...error_data['default'], ...error});
   }
   else next(error);
 }
