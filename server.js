@@ -92,11 +92,11 @@ function check_digest_user(user,realm) {
 };
 
 realm = 'BE-HTTP';
-app.get('/digest.html', digest_auth(realm, check_digest_user));
+app.get('/digest.html', digest_auth(realm, check_digest_user, create_nonce, check_nonce));
 app.get('/401/digest', err(401).digest(realm,create_nonce));
 
 realm = 'Digest 2';
-app.get('/digest2.html', digest_auth(realm, check_digest_user));
+app.get('/digest2.html', digest_auth(realm, check_digest_user, create_nonce, check_nonce));
 app.get('/401/digest2', err(401).digest(realm,create_nonce));
 
 app.use(render_unknown_user, render_unallowed_realm, render_wrong_password, render_401_digest);
@@ -309,10 +309,163 @@ function basic_auth(realm,check_user) {
 
 /* ****************************************************************************
 **
-** Digest authentication middleware
+** Returns a Digest Authentication middleware
+**
+** Signature :
+**   digest_auth(
+**     string realm,
+**     function check_user,
+**     function create_nonce = default_create_nonce,
+**     function check_nonce = default_check_nonce
+**   ) returns middleware
+**
+** Expected helper functions signature :
+** - check_user(username,realm) should return :
+**   + digest A1 if user is authorized for the given realm
+**   + undefined  is user not allowed for this realm
+**   + null if unknown user
+** - create_nonce(request) returns a nonce
+** - check_nonce(request,response,next) : a middleware expected to call next
+**   with or without error, typically via err() in the latter case
+**
+** default_create_nonce returns a nonce based on date and time
+** default_check_nonce calls next() without any checks
+**
+** The returned middleware typically does the job by chaining following middleware :
+** - digest_auth_parser(realm,create_nonce)
+** - check_nonce
+** - check_digest_credentials(realm, check_user, create_nonce)
+**
+** Thus the couples below are equivalent :
+**
+** - app.use(digest_auth(realm, check_user));
+** - app.use(
+**     digest_auth_parser(realm),
+**     check_digest_credentials(realm, check_user)
+**   );
+**
+** - app.get('/digest.html',
+**     digest_auth(realm, check_user, create_nonce, check_nonce)
+**   );
+** - app.get('/digest.html',
+**     digest_auth_parser(realm, create_nonce),
+**     check_nonce,
+**     check_digest_credentials(realm, check_user, create_nonce, check_nonce)
+**   );
 **
 ** ***************************************************************************/
 
+function digest_auth(realm, check_user, create_nonce=default_create_nonce, check_nonce=default_check_nonce) {
+  return function(request, response, next) {
+    digest_auth_parser(realm,create_nonce)(request, response, function(error) {
+      if (error) next(error);
+      else check_nonce(request, response, function(error) {
+        if (error) next(error);
+        else check_digest_credentials(realm,check_user,create_nonce)(request, response, next);
+      });
+    });
+  };
+}
+function default_create_nonce() {
+  return md5((new Date()).getTime());
+}
+function default_check_nonce(req,res,next) {
+  next();
+}
+
+
+/* ****************************************************************************
+**
+** Returns middleware to parse the "Authorization: Digest" request header
+**
+** The returned middleware sets request.auth_info with data extracted from
+** analysed header (typically {username, realm, nonce, URI, response})
+** or sets response status 401 and appropriate "WWW-Authtenticate" header
+** and calls next with error { code: 401, realm, nonce }
+**
+** Expected helper function signature :
+** - create_nonce(request) returns a nonce
+**
+** ***************************************************************************/
+
+function digest_auth_parser(realm, create_nonce) {
+  create_nonce = create_nonce || def_nonce_gen;
+  return function (request,response,next) {
+    var auth = request.headers.authorization;
+    if ( auth && auth.indexOf('Digest') === 0 ) {
+      request.auth_info = auth.split(/,? /).reduce( function(o,s) {
+        let [k,v] = s.split('=');
+        if ( v ) {
+          v = v.trim();
+          o[k] = v.substr(1,v.length-2);
+        }
+        return o;
+      },{});
+      next();
+    }
+    // no Digest Authorization header
+    else err(401).digest(realm,create_nonce)(request, response, next);
+  };
+}
+
+
+/* ****************************************************************************
+**
+** Returns middleware to check the Digest credentials
+**
+** Expected helper functions signature :
+** - check_user(username,realm) should return :
+**   + digest A1 if user is authorized for the given realm
+**   + undefined  is user not allowed for this realm
+**   + null if unknown user
+** - create_nonce(request) returns a nonce
+**
+** The returned middleware calls next() if user is properly authenticated,
+** or sets response status 401 (or 500), "WWW-Authenticate" header (if 401)
+** and calls next with error { code, message, realm, nonce }.
+**
+** Error messages are :
+**   500 'no auth_info'      (should not happen)
+**   401 'unknown user'      (check_user returned null)
+**   401 'realm not allowed' (check_user returned undefined)
+**   401 'wrong password'    (invalid credentials)
+**
+** ***************************************************************************/
+
+function check_digest_credentials(realm, check_user, create_nonce) {
+  return function(request, response, next) {
+    let info = request.auth_info
+      , A1 = info && check_user(info.username, realm)
+    ;
+    if ( ! info ) {
+      err(500,'no auth_info')(request, response, next);
+    }
+    else if ( A1 === null ) {
+      err(401,'unknown user').digest(realm,create_nonce)(request, response, next);
+    }
+    else if ( A1 === undefined ) {
+      err(401,'realm not allowed').digest(realm,create_nonce)(request, response, next);
+    }
+    else {
+      let A2 = md5(request.method+':'+info.uri)
+        , expected = md5(A1+':'+info.nonce+':'+A2)
+      ;
+      if ( info.response == expected ) next(); // user is authenticated
+      else err(401,'wrong password').digest(realm,create_nonce)(request, response, next);
+    }
+  };
+}
+
+
+/* ****************************************************************************
+**
+** Advanced nonce generator
+**
+** Creates a new nonce based on client IP, current time, and http verb.
+** The nonce is stored together with the info it was build from, a,d
+** automatically removed from the store after 1 hour.
+**
+** ***************************************************************************/
 nonces = [];
 function create_nonce(request) {
   var ip = get_client_ip(request)
@@ -326,6 +479,24 @@ function create_nonce(request) {
   },3600000); // 1 hour
   return nonce;
 }
+
+/* ****************************************************************************
+**
+** Advanced nonce checking middleware
+**
+** This middleware calls next() if found nonce has been previsouly generated,
+** less than 1 minute ago, for the same client and for the same http verb.
+** Else, it sets response status 401 and "WWW-Authenticate" header
+** and calls next with error { code, message, realm, nonce }.
+**
+** Error messages are :
+**   401 'Illegal nonce'      (unregistered nonce - never emitted or > 1h ago)
+**   401 'IP not allowed'     (client and registered IPs do not match)
+**   401 'Method not allowed' (request and registered http verbs do not match)
+**   401 'Stale nonce'        (nonce has been registered more than 1mn ago)
+**
+** ***************************************************************************/
+
 function check_nonce(request,response,next) {
   var info = request.auth_info
     , ip = get_client_ip(request)
@@ -347,59 +518,12 @@ function check_nonce(request,response,next) {
     else if ( nonce_info.method != method ) {
       err(401,'Method not allowed').digest(info.realm,create_nonce)(request,response,next);
     }
-    // nonce duration is 30s - too short for a static server, more than enough for an API
-    else if ( time - nonce_info.time > 30000 ) {
+    // nonce duration is 1mn - too short for a static server, more than enough for an API
+    else if ( time - nonce_info.time > 60000 ) {
       err(401,'Stale nonce').digest(info.realm,create_nonce)(request,response,next);
     }
     else next();
   }
-}
-
-function digest_auth_parser(request,response,next) {
-  var auth = request.headers.authorization
-    , err_401 = err(401) // no message
-  ;
-  if ( auth && auth.indexOf('Digest') === 0 ) {
-    request.auth_info =  auth.split(/,? /).reduce( function(o,s) {
-      let [k,v] = s.split('=');
-      if ( v ) {
-        v = v.trim();
-        o[k] = v.substr(1,v.length-2);
-      }
-      return o;
-    },{});
-    next();
-  }
-  else next(err_401); // no Digest Authorization header
-}
-
-function digest_auth(realm, check_user) {
-  return function(request, response, next) {
-    digest_auth_parser(request, response, function(error) {
-      if (error) error.digest(realm,create_nonce)(request, response, next);
-      else check_nonce(request, response, function(error) {
-        if (error) next(error);
-        else {
-          let info = request.auth_info
-            , A1 = check_user(info.username, realm)
-          ;
-          if ( A1 === null ) {
-            err(401,'unknown user').digest(realm,create_nonce)(request, response, next);
-          }
-          else if ( A1 === undefined ) {
-            err(401,'realm not allowed').digest(realm,create_nonce)(request, response, next);
-          }
-          else {
-            let A2 = md5(request.method+':'+info.uri)
-              , expected = md5(A1+':'+info.nonce+':'+A2)
-            ;
-            if ( info.response == expected ) next(); // user is authenticated
-            else err(401,'wrong password').digest(realm,create_nonce)(request, response, next);
-          }
-        }
-      });
-    });
-  };
 }
 
 /*
@@ -409,6 +533,7 @@ function get_client_ip(request) {
   var xff = request.headers['x-forwarded-for'];
   return (xff && xff.split(',').pop().trim()) || request.ip;
 }
+
 
 /* ****************************************************************************
 **
@@ -527,10 +652,9 @@ function err(code, message=null) {
       },
 
       // digest authentication
-      digest: function(realm, nonce_gen=null) {
-        nonce_gen = nonce_gen || (() => md5((new Date()).getTime()));
+      digest: function(realm, create_nonce=def_nonce_gen) {
         return function(request, response, next) {
-          var nonce = nonce_gen(request);
+          var nonce = create_nonce(request);
           response.status(code).set({
             'WWW-Authenticate': 'Digest realm="'+realm+'", nonce="'+nonce+'"'
           });
@@ -554,6 +678,7 @@ function err(code, message=null) {
 ** ***************************************************************************/
 
 function render_401_basic(error, request ,response, next) {
+  // console.log('hello from render_401_basic',error);
   if ( error && error.code == 401 && !error.nonce ) {
     response.render( 'error.html', {
       bgcolor: '#066',
