@@ -738,7 +738,7 @@ error_data = {
 
 function render_error(error, request, response, next) {
   var render = (o) => response.render('error.html', o);
-  console.log('hello from render_error',error);
+  // console.log('hello from render_error',error);
   if ( ! error ) next();
   if ( (''+error.code).substring(0,2) == '30' ) {
     render({...error_data[error.code],
