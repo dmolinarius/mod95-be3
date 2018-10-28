@@ -55,12 +55,19 @@ app.get('/perm',  err(308)('http://www.ec-lyon.fr'));
 /*
 ** HTTP Basic protected resources
 */
-function check_basic_user(user,password) {
-  return (user == 'be-http' && password == 'cool!') ? {user, password} : null;
+function check_basic_user(user,realm,password) {
+  var users = { 'be-http': { 'BE-HTTP': 'cool!' } };
+  if ( !users[user] ) return null;
+  if ( !users[user][realm] ) return undefined;
+  return (users[user][realm] == password);
 }
 realm = 'BE-HTTP';
 app.get('/user.html', basic_auth(realm, check_basic_user));
 app.get('/401/basic', err(401).basic(realm));
+
+realm = 'BASIC2'
+app.get('/user2.html', basic_auth(realm, check_basic_user));
+app.get('/401/basic2', err(401).basic(realm));
 
 // encode
 function encode(request, response, next) {
@@ -164,7 +171,7 @@ function splice_list(request,response,next) {
     lists[request.params.id].data.splice(
       request.body.index, request.body.delete, ...list_data(request.body.value));
   }
-  else { 
+  else {
     lists[request.params.id].data.splice(request.body.index, request.body.delete);
   }
   response.data = lists[request.params.id];
@@ -264,6 +271,13 @@ function check_params(ctx,params) {
 **
 ** Basic authentication middleware
 **
+** Expected helper function signature :
+** - check_user(username,realm, password) should return :
+**   + null if unknown user
+**   + undefined if unknown realm
+**   + false if user not allowed for this realm
+**   + true if user is authenticated
+**
 ** ***************************************************************************/
 
 function basic_auth(realm,check_user) {
@@ -275,10 +289,13 @@ function basic_auth(realm,check_user) {
       var encoded = auth.split(' ')[1].trim()
         , decoded = Buffer.from(encoded,'base64').toString('ascii')
         , [username,password] = decoded.split(':')
+        , match = check_user(username,realm,password)
       ;
-      request.user = check_user(username,password);
-      if ( request.user ) next();
-      else err_401(request,response,next);
+      request.auth_info = {username, password};
+      if ( match ) { request.user = username; next(); }
+      else if (match === false) err(401,'wrong password').basic(realm)(request, response, next);
+      else if (match === null) err(401,'unknown user').basic(realm)(request, response, next);
+      else err(401,'realm not allowed').basic(realm)(request, response, next);
     }
     else err_401(request,response,next);
   };
@@ -300,7 +317,7 @@ function basic_auth(realm,check_user) {
 ** Expected helper functions signature :
 ** - check_user(username,realm) should return :
 **   + digest A1 if user is authorized for the given realm
-**   + undefined  is user not allowed for this realm
+**   + undefined if user not allowed for this realm
 **   + null if unknown user
 ** - create_nonce(request) returns a nonce
 ** - check_nonce(request,response,next) : a middleware expected to call next
@@ -337,6 +354,9 @@ function digest_auth(realm, check_user, create_nonce=default_create_nonce, check
   return function(request, response, next) {
     digest_auth_parser(realm,create_nonce)(request, response, function(error) {
       if (error) next(error);
+      else if ( request.auth_info.realm !== realm ) {
+        err(401,'Unexpected realm').digest(realm,create_nonce)(request, response, next);
+      }
       else check_nonce(request, response, function(error) {
         if (error) next(error);
         else check_digest_credentials(realm,check_user,create_nonce)(request, response, next);
@@ -628,8 +648,12 @@ error_300_data = {
     bgcolor: '#aaa',
     default_message: "Allez voir ailleurs..."
 }
-error_401_data = {
+error_401_digest_data = {
     bgcolor: '#060',
+    code: "401 - Authorization Required"
+}
+error_401_basic_data = {
+    bgcolor: '#066',
     code: "401 - Authorization Required"
 }
 error_data = {
@@ -645,32 +669,35 @@ error_data = {
   '308': { ...error_300_data,
     code: "308 - permanent Redirect"
   },
-  "401_basic": { ...error_401_data,
+  "401_basic": { ...error_401_basic_data,
     bgcolor: '#066',
     default_message: "Document protégé par mot de passe"
   },
-  "401_digest": { ...error_401_data,
+  "401_digest": { ...error_401_digest_data,
     default_message: "Document protégé par mot de passe"
   },
-  "unknown user": { ...error_401_data,
+  "unknown user": {
     default_message: "Utilisateur inconnu"
   },
-  "wrong password": { ...error_401_data,
+  "wrong password": {
     default_message: "Mot de passe erroné"
   },
-  'realm not allowed': { ...error_401_data,
+  'realm not allowed': {
     default_message: "Zone interdite"
   },
-  'Illegal nonce': { ...error_401_data,
+  'Unexpected realm': {
+    default_message: "Realm incorrect"
+  },
+  'Illegal nonce': {
     default_message: "Nonce incorrect"
   },
-  'IP not allowed' : { ...error_401_data,
+  'IP not allowed' : {
     default_message: "Adresse IP incorrecte"
   },
-  'Method not allowed': { ...error_401_data,
+  'Method not allowed': {
     default_message: "Méthode incorrecte"
   },
-  'Stale nonce' : { ...error_401_data,
+  'Stale nonce' : {
     default_message: "Durée de validité du nonce dépassée"
   },
   '404' : {
@@ -718,11 +745,12 @@ function render_error(error, request, response, next) {
       message: 'Il faut aller voir <a href="'+error.location+'">'+error.location+'</a>'});
   }
   else if ( error.code == 401 ) {
-    if ( error.message == 'unknown user') render({...error_data[error.message],
+    let data = error.nonce ? error_401_digest_data : error_401_basic_data;
+    if ( error.message == 'unknown user') render({...data, ...error_data[error.message],
          message: "L'utilisateur "+request.auth_info.username+" est inconnu de nos services" });
-    else if ( !error.nonce ) render(error_data['401_basic']);
-    else if ( error.message in error_data ) render(error_data[error.message]);
-    else render({...error_data['401_digest'], message:error.message});
+    else if ( error.message in error_data ) render({...data, ...error_data[error.message]});
+    else if ( error.nonce ) render({...error_data['401_digest'], message:error.message});
+    else render(error_data['401_basic']);
   }
   else if ( error.code == 405 ) {
     render({...error_data['405'],
