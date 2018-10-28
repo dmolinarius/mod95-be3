@@ -28,6 +28,16 @@ app.set('views', VIEWS_PATH);
 ** ***************************************************************************/
 
 /*
+** simple form response
+*/
+app.post('/message',
+  check_content_types(['application/x-www-form-urlencoded']),
+  urlencoded_parser,
+  check_params('body',['nom','prénom','message']),
+  (req,res,next) => res.render('message.html', req.body)
+);
+
+/*
 ** resources with content-type not matching file extension
 */
 function fake(request, response, next) {
