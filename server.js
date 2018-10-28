@@ -671,13 +671,13 @@ error_data = {
     code: "301 - Moved Permanently"
   },
   '302': { ...error_300_data,
-    code: "302 - Found (Moved Temporarily)"
+    code: "302 - Moved Temporarily"
   },
   '307': { ...error_300_data,
     code: "307 - Temporary Redirect"
   },
   '308': { ...error_300_data,
-    code: "308 - permanent Redirect"
+    code: "308 - Permanent Redirect"
   },
   "401_basic": { ...error_401_basic_data,
     bgcolor: '#066',
