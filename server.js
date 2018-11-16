@@ -401,7 +401,7 @@ function digest_auth_parser(realm, create_nonce) {
   return function (request,response,next) {
     var auth = request.headers.authorization;
     if ( auth && auth.indexOf('Digest') === 0 ) {
-      request.auth_info = auth.split(/,? /).reduce( function(o,s) {
+      request.auth_info = auth.split(/[ \t,][ \t]*/).reduce( function(o,s) {
         let [k,v] = s.split('=');
         if ( v ) {
           v = v.trim();
