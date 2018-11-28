@@ -3,4 +3,4 @@
 <meta charset="utf-8">
 <title>Exemple HTML</title>
 <h1 style="margin:0 0 0.33em">Exemple</h1>
-<div>Hello, ceci est un exemple de fichier HTML</div>
+<div>Hello, ceci est un exemple de document HTML</div>
