@@ -147,6 +147,15 @@ app.post('/todolist', check_content_types([
 );
 
 /*
+** GET simple json response to test CORS
+*/
+function ping(request,response,next) {
+  response.data = { message: request.params.msg };
+  next();
+}
+app.get('/ping/:msg', ping, send_json);
+
+/*
 ** PUT /todolist/:id - change given todolist
 **   param : value = String | [String]
 **   returns : modified todolist
@@ -535,11 +544,17 @@ function check_nonce(request,response,next) {
 }
 
 /*
-** cf. https://stackoverflow.com/questions/18264304/get-clients-real-ip-address-on-heroku
+** return client IP address
 */
 function get_client_ip(request) {
-  var xff = request.headers['x-forwarded-for'];
-  return (xff && xff.split(',').pop().trim()) || request.ip;
+  /*
+  ** cf. https://stackoverflow.com/questions/18264304/get-clients-real-ip-address-on-heroku
+  ** heroku version
+  */
+  //var xff = request.headers['x-forwarded-for'];
+  //return (xff && xff.split(',').pop().trim()) || request.ip;
+
+  return request.ip;
 }
 
 
